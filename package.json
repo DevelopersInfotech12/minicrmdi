@@ -1,0 +1,31 @@
+{
+  "name": "crm-backend",
+  "version": "1.0.0",
+  "description": "Mini CRM Backend - Client, Project & Payment Management",
+  "main": "src/server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "nodemon src/server.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
+    "dotenv": "^16.5.0",
+    "express": "^4.21.2",
+    "express-async-errors": "^3.1.1",
+    "express-validator": "^7.2.1",
+    "helmet": "^8.0.0",
+    "jsonwebtoken": "^9.0.3",
+    "mongoose": "^8.14.1",
+    "morgan": "^1.10.0",
+    "multer": "^2.1.1",
+    "passport": "^0.7.0",
+    "passport-google-oauth20": "^2.0.0",
+    "uuid": "^14.0.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.9"
+  }
+}

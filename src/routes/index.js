@@ -1,0 +1,24 @@
+import express from "express";
+import authRoutes      from "./authRoutes.js";
+import clientRoutes    from "./clientRoutes.js";
+import projectRoutes   from "./projectRoutes.js";
+import noteRoutes      from "./noteRoutes.js";
+import paymentRoutes   from "./paymentRoutes.js";
+import dashboardRoutes from "./dashboardRoutes.js";
+import milestoneRoutes from "./milestoneRoutes.js";
+import invoiceRoutes   from "./invoiceRoutes.js";
+import leadRoutes      from "./leadRoutes.js";
+import taskRoutes      from "./taskRoutes.js";
+
+const router = express.Router();
+router.use("/auth",      authRoutes);
+router.use("/clients",   clientRoutes);
+router.use("/projects",  projectRoutes);
+router.use("/notes",     noteRoutes);
+router.use("/payments",  paymentRoutes);
+router.use("/dashboard", dashboardRoutes);
+router.use("/milestones",milestoneRoutes);
+router.use("/invoices",  invoiceRoutes);
+router.use("/leads",     leadRoutes);
+router.use("/tasks",     taskRoutes);
+export default router;
