@@ -20,7 +20,8 @@ export const register = async (req, res) => {
   const token = generateToken(user._id);
   sendTokenCookie(res, token);
 
-  sendSuccess(res, 201, "Account created successfully", { user });
+  // Also send token in body for cross-domain frontend (Vercel + Render)
+  sendSuccess(res, 201, "Account created successfully", { user, token });
 };
 
 // @desc  Login with email + password
@@ -48,7 +49,8 @@ export const login = async (req, res) => {
   const token = generateToken(user._id);
   sendTokenCookie(res, token);
 
-  sendSuccess(res, 200, "Logged in successfully", { user });
+  // Also send token in body for cross-domain frontend (Vercel + Render)
+  sendSuccess(res, 200, "Logged in successfully", { user, token });
 };
 
 // @desc  Logout
@@ -56,7 +58,9 @@ export const login = async (req, res) => {
 export const logout = (req, res) => {
   res.cookie("token", "", {
     httpOnly: true,
-    expires: new Date(0),
+    secure:   process.env.NODE_ENV === "production",
+    sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+    expires:  new Date(0),
   });
   sendSuccess(res, 200, "Logged out successfully");
 };
@@ -68,11 +72,14 @@ export const getMe = (req, res) => {
 };
 
 // @desc  Google OAuth callback
+// Pass token in URL for cross-domain support (Vercel frontend + Render backend)
 export const googleCallback = async (req, res) => {
   if (!req.user) {
     return res.redirect(`${process.env.FRONTEND_URL}/login?error=google_failed`);
   }
   const token = generateToken(req.user._id);
   sendTokenCookie(res, token);
-  res.redirect(`${process.env.FRONTEND_URL}/dashboard`);
+
+  // Pass token in URL so frontend proxy.js can set it as cookie on Vercel domain
+  res.redirect(`${process.env.FRONTEND_URL}/dashboard?token=${token}`);
 };
