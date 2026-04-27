@@ -3,6 +3,8 @@ import { Strategy as GoogleStrategy } from "passport-google-oauth20";
 import User from "../models/User.js";
 
 console.log("Google Callback URL:", process.env.GOOGLE_CALLBACK_URL);
+console.log('Passport callback URL:', process.env.GOOGLE_CALLBACK_URL);
+console.log('Client ID starts with:', process.env.GOOGLE_CLIENT_ID?.slice(0,10));
 
 passport.use(
   new GoogleStrategy(
