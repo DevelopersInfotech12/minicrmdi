@@ -1,25 +1,38 @@
 import Project from "../models/Project.js";
 import Client from "../models/Client.js";
+import Employee from "../models/Employee.js";
 import AppError from "../utils/AppError.js";
 import { sendSuccess } from "../utils/apiResponse.js";
 import { SERVICE_TYPES, PRIORITY_TYPES, BILLING_CYCLES } from "../models/Project.js";
 
 export const getAllProjects = async (req, res) => {
-  const { status, client, search, serviceType, priority, isRecurring,
+  const { status, client, clientName, search, serviceType, priority, isRecurring,
           page = 1, limit = 10, sortBy = "createdAt", order = "desc" } = req.query;
 
   const filter = {};
+  filter.owner = req.user._id;
   if (status)      filter.status      = status;
-  if (client)      filter.client      = client;
   if (serviceType) filter.serviceType = serviceType;
   if (priority)    filter.priority    = priority;
   if (isRecurring !== undefined) filter.isRecurring = isRecurring === "true";
   if (search) filter.title = { $regex: search, $options: "i" };
 
+  // Filter by client ID (exact) or client name (search)
+  if (client) {
+    filter.client = client;
+  } else if (clientName) {
+    const matchedClients = await Client.find({
+      owner: req.user._id,
+      name: { $regex: clientName, $options: "i" },
+    }).distinct("_id");
+    filter.client = { $in: matchedClients };
+  }
+
   const skip = (Number(page) - 1) * Number(limit);
   const [projects, total] = await Promise.all([
     Project.find(filter)
       .populate("client","name email phone company")
+      .populate("assignedTo","name role email")
       .sort({ [sortBy]: order === "asc" ? 1 : -1 })
       .skip(skip).limit(Number(limit)).lean(),
     Project.countDocuments(filter),
@@ -31,8 +44,9 @@ export const getAllProjects = async (req, res) => {
 };
 
 export const getProjectById = async (req, res) => {
-  const project = await Project.findById(req.params.id)
+  const project = await Project.findOne({ _id: req.params.id, owner: req.user._id })
     .populate("client","name email phone company")
+    .populate("assignedTo","name role email")
     .populate("notes")
     .populate("payment");
   if (!project) throw new AppError("Project not found", 404);
@@ -40,25 +54,24 @@ export const getProjectById = async (req, res) => {
 };
 
 export const getProjectsByClient = async (req, res) => {
-  const client = await Client.findById(req.params.clientId);
+  const client = await Client.findOne({ _id: req.params.clientId, owner: req.user._id });
   if (!client) throw new AppError("Client not found", 404);
-  const projects = await Project.find({ client: req.params.clientId })
+  const projects = await Project.find({ client: req.params.clientId, owner: req.user._id })
     .populate("payment").sort({ createdAt: -1 }).lean();
   sendSuccess(res, 200, "Client projects fetched", { projects });
 };
 
-// Recurring projects due for renewal
 export const getRecurringDue = async (req, res) => {
   const now          = new Date();
   const sevenDaysOut = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
 
   const [overdue, upcoming, totalRecurringRevenue] = await Promise.all([
-    Project.find({ isRecurring: true, recurringActive: true, nextBillingDate: { $lt: now } })
+    Project.find({ owner: req.user._id, isRecurring: true, recurringActive: true, nextBillingDate: { $lt: now } })
       .populate("client","name email phone").sort({ nextBillingDate: 1 }),
-    Project.find({ isRecurring: true, recurringActive: true, nextBillingDate: { $gte: now, $lte: sevenDaysOut } })
+    Project.find({ owner: req.user._id, isRecurring: true, recurringActive: true, nextBillingDate: { $gte: now, $lte: sevenDaysOut } })
       .populate("client","name email phone").sort({ nextBillingDate: 1 }),
     Project.aggregate([
-      { $match: { isRecurring: true, recurringActive: true } },
+      { $match: { owner: req.user._id, isRecurring: true, recurringActive: true } },
       { $group: { _id: "$billingCycle", total: { $sum: "$recurringAmount" }, count: { $sum: 1 } } },
     ]),
   ]);
@@ -77,10 +90,9 @@ export const getRecurringDue = async (req, res) => {
   });
 };
 
-// Client-wise recurring summary
 export const getClientRecurringSummary = async (req, res) => {
   const summary = await Project.aggregate([
-    { $match: { isRecurring: true, recurringActive: true } },
+    { $match: { owner: req.user._id, isRecurring: true, recurringActive: true } },
     { $group: {
         _id: "$client",
         totalMonthly: { $sum: { $switch: {
@@ -104,13 +116,24 @@ export const getClientRecurringSummary = async (req, res) => {
 export const createProject = async (req, res) => {
   const { title, description, client, status, serviceType, priority,
           isRecurring, billingCycle, recurringAmount, nextBillingDate,
-          startDate, endDate } = req.body;
+          startDate, endDate, budget, assignedTo } = req.body;
 
-  const clientExists = await Client.findById(client);
+  const clientExists = await Client.findOne({ _id: client, owner: req.user._id });
   if (!clientExists) throw new AppError("Client not found", 404);
 
-  const project = new Project({ title, description, client, status, serviceType, priority,
-    isRecurring: isRecurring || false, billingCycle, recurringAmount, startDate, endDate });
+  // Validate assignedTo employee belongs to owner
+  if (assignedTo) {
+    const emp = await Employee.findOne({ _id: assignedTo, owner: req.user._id });
+    if (!emp) throw new AppError("Employee not found", 404);
+  }
+
+  const project = new Project({
+    owner: req.user._id,
+    title, description, client, status, serviceType, priority,
+    isRecurring: isRecurring || false, billingCycle, recurringAmount, startDate, endDate,
+    budget: budget !== undefined ? Number(budget) : null,
+    assignedTo: assignedTo || null,
+  });
 
   if (isRecurring && billingCycle && !nextBillingDate) {
     project.computeNextBillingDate();
@@ -120,15 +143,16 @@ export const createProject = async (req, res) => {
 
   await project.save();
   await project.populate("client","name email phone company");
+  await project.populate("assignedTo","name role email");
   sendSuccess(res, 201, "Project created", { project });
 };
 
 export const updateProject = async (req, res) => {
   const { title, description, status, serviceType, priority,
           isRecurring, billingCycle, recurringAmount, nextBillingDate,
-          lastBilledDate, recurringActive, startDate, endDate } = req.body;
+          lastBilledDate, recurringActive, startDate, endDate, budget, assignedTo } = req.body;
 
-  const project = await Project.findById(req.params.id);
+  const project = await Project.findOne({ _id: req.params.id, owner: req.user._id });
   if (!project) throw new AppError("Project not found", 404);
 
   if (title !== undefined)           project.title           = title;
@@ -142,6 +166,8 @@ export const updateProject = async (req, res) => {
   if (recurringActive !== undefined) project.recurringActive = recurringActive;
   if (startDate !== undefined)       project.startDate       = startDate;
   if (endDate !== undefined)         project.endDate         = endDate;
+  if (budget !== undefined)          project.budget          = budget !== null ? Number(budget) : null;
+  if (assignedTo !== undefined)      project.assignedTo      = assignedTo || null;
   if (lastBilledDate !== undefined) {
     project.lastBilledDate = lastBilledDate;
     project.computeNextBillingDate();
@@ -150,11 +176,12 @@ export const updateProject = async (req, res) => {
 
   await project.save();
   await project.populate("client","name email phone company");
+  await project.populate("assignedTo","name role email");
   sendSuccess(res, 200, "Project updated", { project });
 };
 
 export const deleteProject = async (req, res) => {
-  const project = await Project.findById(req.params.id);
+  const project = await Project.findOne({ _id: req.params.id, owner: req.user._id });
   if (!project) throw new AppError("Project not found", 404);
   await project.deleteOne();
   sendSuccess(res, 200, "Project deleted");

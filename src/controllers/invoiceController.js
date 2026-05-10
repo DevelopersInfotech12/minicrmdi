@@ -8,7 +8,7 @@ import path from "path";
 // @desc  Get all invoices for a project
 // @route GET /api/v1/invoices/project/:projectId
 export const getInvoicesByProject = async (req, res) => {
-  const project = await Project.findById(req.params.projectId);
+  const project = await Project.findOne({ _id: req.params.projectId, owner: req.user._id });
   if (!project) throw new AppError("Project not found", 404);
 
   const invoices = await Invoice.find({ project: req.params.projectId })
@@ -25,7 +25,7 @@ export const uploadInvoice = async (req, res) => {
 
   const { projectId, milestoneId, label } = req.body;
 
-  const project = await Project.findById(projectId);
+  const project = await Project.findOne({ _id: projectId, owner: req.user._id });
   if (!project) {
     // Remove uploaded file if project not found
     fs.unlinkSync(req.file.path);

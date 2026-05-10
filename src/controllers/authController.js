@@ -3,24 +3,26 @@ import AppError from "../utils/AppError.js";
 import { sendSuccess } from "../utils/apiResponse.js";
 import { generateToken, sendTokenCookie } from "../middleware/auth.js";
 
-// @desc  Register first admin (only works if no admin exists)
+// @desc  Register new admin account
 // @route POST /api/v1/auth/register
+// @access Public — anyone can create their own admin account (data is isolated per account)
 export const register = async (req, res) => {
   const { name, email, password } = req.body;
 
   if (!name || !email || !password)
     throw new AppError("Name, email and password are required", 400);
 
-  const adminCount = await User.countDocuments({ role: "admin" });
-  if (adminCount > 0)
-    throw new AppError("Admin account already exists. Please login.", 400);
+  if (password.length < 6)
+    throw new AppError("Password must be at least 6 characters", 400);
+
+  const existingUser = await User.findOne({ email });
+  if (existingUser)
+    throw new AppError("An account with this email already exists. Please login.", 400);
 
   const user = await User.create({ name, email, password, role: "admin" });
 
   const token = generateToken(user._id);
   sendTokenCookie(res, token);
-
-  // Also send token in body for cross-domain frontend (Vercel + Render)
   sendSuccess(res, 201, "Account created successfully", { user, token });
 };
 
@@ -37,7 +39,7 @@ export const login = async (req, res) => {
     throw new AppError("Invalid email or password", 401);
 
   if (!user.password)
-    throw new AppError("This account uses Google login. Please sign in with Google.", 400);
+    throw new AppError("This account was created differently. Please use the correct login method.", 400);
 
   const isMatch = await user.comparePassword(password);
   if (!isMatch)
@@ -48,8 +50,6 @@ export const login = async (req, res) => {
 
   const token = generateToken(user._id);
   sendTokenCookie(res, token);
-
-  // Also send token in body for cross-domain frontend (Vercel + Render)
   sendSuccess(res, 200, "Logged in successfully", { user, token });
 };
 
@@ -71,15 +71,32 @@ export const getMe = (req, res) => {
   sendSuccess(res, 200, "User fetched", { user: req.user });
 };
 
-// @desc  Google OAuth callback
-// Pass token in URL for cross-domain support (Vercel frontend + Render backend)
-export const googleCallback = async (req, res) => {
-  if (!req.user) {
-    return res.redirect(`${process.env.FRONTEND_URL}/login?error=google_failed`);
-  }
-  const token = generateToken(req.user._id);
-  sendTokenCookie(res, token);
+// @desc  Update profile
+// @route PUT /api/v1/auth/profile
+export const updateProfile = async (req, res) => {
+  const { name, email } = req.body;
+  const user = await User.findByIdAndUpdate(
+    req.user._id,
+    { name, email },
+    { new: true, runValidators: true }
+  );
+  sendSuccess(res, 200, "Profile updated", { user });
+};
 
-  // Pass token in URL so frontend proxy.js can set it as cookie on Vercel domain
-  res.redirect(`${process.env.FRONTEND_URL}/dashboard?token=${token}`);
+// @desc  Change password
+// @route PUT /api/v1/auth/change-password
+export const changePassword = async (req, res) => {
+  const { currentPassword, newPassword } = req.body;
+  if (!currentPassword || !newPassword)
+    throw new AppError("Both current and new password are required", 400);
+  if (newPassword.length < 6)
+    throw new AppError("Password must be at least 6 characters", 400);
+
+  const user = await User.findById(req.user._id).select("+password");
+  const isMatch = await user.comparePassword(currentPassword);
+  if (!isMatch) throw new AppError("Current password is incorrect", 401);
+
+  user.password = newPassword;
+  await user.save();
+  sendSuccess(res, 200, "Password changed successfully");
 };

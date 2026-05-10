@@ -1,25 +1,24 @@
 import express from "express";
-import passport from "../config/passport.js";
-import { register, login, logout, getMe, googleCallback } from "../controllers/authController.js";
+import {
+  register, login, logout, getMe,
+  updateProfile, changePassword,
+} from "../controllers/authController.js";
 import { protect } from "../middleware/auth.js";
 
 const router = express.Router();
 
+// Public
 router.post("/register", register);
 router.post("/login",    login);
-router.post("/logout",   protect, logout);
-router.get("/me",        protect, getMe);
 
-router.get("/google",
-  passport.authenticate("google", { scope: ["profile", "email"], session: false })
-);
+// Protected
+router.post("/logout",         protect, logout);
+router.get("/me",              protect, getMe);
+router.put("/profile",         protect, updateProfile);
+router.put("/change-password", protect, changePassword);
 
-router.get("/google/callback",
-  passport.authenticate("google", {
-    session: false,
-    failureRedirect: `${process.env.FRONTEND_URL}/login?error=google_failed`
-  }),
-  googleCallback
-);
+// Google OAuth — disabled
+// router.get("/google", ...);
+// router.get("/google/callback", ...);
 
 export default router;

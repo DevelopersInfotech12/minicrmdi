@@ -6,6 +6,12 @@ const BILLING_CYCLES = ["Monthly","Quarterly","Half-yearly","Yearly"];
 
 const projectSchema = new mongoose.Schema(
   {
+    owner: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+      index: true,
+    },
     title: { type: String, required: [true,"Project title is required"], trim: true, maxlength: 150 },
     description: { type: String, trim: true, maxlength: 1000 },
     client: { type: mongoose.Schema.Types.ObjectId, ref: "Client", required: [true,"Client is required"] },
@@ -22,6 +28,10 @@ const projectSchema = new mongoose.Schema(
     nextBillingDate: { type: Date, default: null },
     lastBilledDate:  { type: Date, default: null },
     recurringActive: { type: Boolean, default: true },
+
+    budget: { type: Number, default: null, min: 0 },
+
+    assignedTo: { type: mongoose.Schema.Types.ObjectId, ref: "Employee", default: null },
 
     startDate: { type: Date },
     endDate:   { type: Date },

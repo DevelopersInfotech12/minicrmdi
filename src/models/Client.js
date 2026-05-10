@@ -2,6 +2,12 @@ import mongoose from "mongoose";
 
 const clientSchema = new mongoose.Schema(
   {
+    owner: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+      index: true,
+    },
     name: {
       type: String,
       required: [true, "Client name is required"],
@@ -11,7 +17,6 @@ const clientSchema = new mongoose.Schema(
     email: {
       type: String,
       required: [true, "Email is required"],
-      unique: true,
       lowercase: true,
       trim: true,
       match: [/^\S+@\S+\.\S+$/, "Please enter a valid email address"],
@@ -50,5 +55,6 @@ clientSchema.virtual("projects", {
   foreignField: "client",
 });
 
+clientSchema.index({ email: 1, owner: 1 }, { unique: true });
 const Client = mongoose.model("Client", clientSchema);
 export default Client;

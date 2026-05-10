@@ -2,6 +2,12 @@ import mongoose from "mongoose";
 
 const noteSchema = new mongoose.Schema(
   {
+    owner: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+      index: true,
+    },
     content: {
       type: String,
       required: [true, "Note content is required"],

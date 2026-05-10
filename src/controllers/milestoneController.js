@@ -6,7 +6,7 @@ import { sendSuccess } from "../utils/apiResponse.js";
 // @desc  Get all milestones for a project
 // @route GET /api/v1/milestones/project/:projectId
 export const getMilestonesByProject = async (req, res) => {
-  const project = await Project.findById(req.params.projectId);
+  const project = await Project.findOne({ _id: req.params.projectId, owner: req.user._id });
   if (!project) throw new AppError("Project not found", 404);
 
   const milestones = await Milestone.find({ project: req.params.projectId })

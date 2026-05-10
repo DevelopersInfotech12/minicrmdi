@@ -3,21 +3,18 @@ import Project from "../models/Project.js";
 import AppError from "../utils/AppError.js";
 import { sendSuccess } from "../utils/apiResponse.js";
 
-// @desc  Get all tasks for a project
-// @route GET /api/v1/tasks/project/:projectId
 export const getTasksByProject = async (req, res) => {
-  const project = await Project.findById(req.params.projectId);
+  const project = await Project.findOne({ _id: req.params.projectId, owner: req.user._id });
   if (!project) throw new AppError("Project not found", 404);
 
-  const tasks = await Task.find({ project: req.params.projectId })
+  const tasks = await Task.find({ project: req.params.projectId, owner: req.user._id })
     .sort({ order: 1, createdAt: 1 });
 
-  // Stats
-  const total     = tasks.length;
-  const done      = tasks.filter(t => t.status === "Done").length;
-  const overdue   = tasks.filter(t => t.isOverdue).length;
+  const total      = tasks.length;
+  const done       = tasks.filter(t => t.status === "Done").length;
+  const overdue    = tasks.filter(t => t.isOverdue).length;
   const inProgress = tasks.filter(t => t.status === "In Progress").length;
-  const pct       = total > 0 ? Math.round((done / total) * 100) : 0;
+  const pct        = total > 0 ? Math.round((done / total) * 100) : 0;
 
   sendSuccess(res, 200, "Tasks fetched", {
     tasks,
@@ -25,20 +22,19 @@ export const getTasksByProject = async (req, res) => {
   });
 };
 
-// @desc  Get overdue tasks (for dashboard alert)
-// @route GET /api/v1/tasks/overdue
 export const getOverdueTasks = async (req, res) => {
   const now = new Date();
   const tasks = await Task.find({
+    owner:   req.user._id,    // ← FIXED
     dueDate: { $lt: now },
     status:  { $ne: "Done" },
   })
     .populate("project", "title")
-    .populate("client",  "name")
     .sort({ dueDate: 1 })
     .limit(10);
 
   const totalOverdue = await Task.countDocuments({
+    owner:   req.user._id,
     dueDate: { $lt: now },
     status:  { $ne: "Done" },
   });
@@ -46,33 +42,29 @@ export const getOverdueTasks = async (req, res) => {
   sendSuccess(res, 200, "Overdue tasks fetched", { tasks, totalOverdue });
 };
 
-// @desc  Create task
-// @route POST /api/v1/tasks
 export const createTask = async (req, res) => {
   const { project, title, description, status, priority, assignedTo, dueDate, estimatedHours, order } = req.body;
 
-  const projectExists = await Project.findById(project);
+  const projectExists = await Project.findOne({ _id: project, owner: req.user._id });
   if (!projectExists) throw new AppError("Project not found", 404);
 
   const task = new Task({
+    owner:   req.user._id,    // ← FIXED
     project,
-    client: projectExists.client,
+    client:  projectExists.client,
     title, description, status, priority,
     assignedTo, estimatedHours,
-    dueDate:  dueDate || null,
-    order:    order   || 0,
+    dueDate: dueDate || null,
+    order:   order   || 0,
   });
   await task.save();
-
   sendSuccess(res, 201, "Task created", { task });
 };
 
-// @desc  Update task
-// @route PUT /api/v1/tasks/:id
 export const updateTask = async (req, res) => {
   const { title, description, status, priority, assignedTo, dueDate, estimatedHours, order } = req.body;
 
-  const task = await Task.findById(req.params.id);
+  const task = await Task.findOne({ _id: req.params.id, owner: req.user._id });
   if (!task) throw new AppError("Task not found", 404);
 
   if (title          !== undefined) task.title          = title;
@@ -88,22 +80,16 @@ export const updateTask = async (req, res) => {
   sendSuccess(res, 200, "Task updated", { task });
 };
 
-// @desc  Toggle task done/undone quickly
-// @route PATCH /api/v1/tasks/:id/toggle
 export const toggleTask = async (req, res) => {
-  const task = await Task.findById(req.params.id);
+  const task = await Task.findOne({ _id: req.params.id, owner: req.user._id });
   if (!task) throw new AppError("Task not found", 404);
-
   task.status = task.status === "Done" ? "To Do" : "Done";
   await task.save();
-
   sendSuccess(res, 200, "Task toggled", { task });
 };
 
-// @desc  Delete task
-// @route DELETE /api/v1/tasks/:id
 export const deleteTask = async (req, res) => {
-  const task = await Task.findById(req.params.id);
+  const task = await Task.findOne({ _id: req.params.id, owner: req.user._id });
   if (!task) throw new AppError("Task not found", 404);
   await task.deleteOne();
   sendSuccess(res, 200, "Task deleted");

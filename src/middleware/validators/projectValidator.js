@@ -17,6 +17,7 @@ export const createProjectValidator = [
   body("nextBillingDate").optional().isISO8601(),
   body("startDate").optional().isISO8601(),
   body("endDate").optional().isISO8601(),
+  body("assignedTo").optional({ nullable: true }).isMongoId().withMessage("Valid employee ID required"),
 ];
 
 export const updateProjectValidator = [
@@ -34,6 +35,7 @@ export const updateProjectValidator = [
   body("recurringActive").optional().isBoolean(),
   body("startDate").optional().isISO8601(),
   body("endDate").optional().isISO8601(),
+  body("assignedTo").optional({ nullable: true }).isMongoId().withMessage("Valid employee ID required"),
 ];
 
 export const mongoIdValidator = [

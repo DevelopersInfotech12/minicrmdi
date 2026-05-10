@@ -5,6 +5,12 @@ const STATUSES   = ["To Do", "In Progress", "Done"];
 
 const taskSchema = new mongoose.Schema(
   {
+    owner: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+      index: true,
+    },
     project:     { type: mongoose.Schema.Types.ObjectId, ref: "Project", required: [true, "Project is required"] },
     client:      { type: mongoose.Schema.Types.ObjectId, ref: "Client",  required: [true, "Client is required"]  },
     title:       { type: String, required: [true, "Task title is required"], trim: true, maxlength: 200 },

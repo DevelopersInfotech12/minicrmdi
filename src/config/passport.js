@@ -2,10 +2,6 @@ import passport from "passport";
 import { Strategy as GoogleStrategy } from "passport-google-oauth20";
 import User from "../models/User.js";
 
-console.log("Google Callback URL:", process.env.GOOGLE_CALLBACK_URL);
-console.log('Passport callback URL:', process.env.GOOGLE_CALLBACK_URL);
-console.log('Client ID starts with:', process.env.GOOGLE_CLIENT_ID?.slice(0,10));
-
 passport.use(
   new GoogleStrategy(
     {
@@ -18,17 +14,16 @@ passport.use(
         const email  = profile.emails?.[0]?.value;
         const avatar = profile.photos?.[0]?.value || null;
 
-        console.log("Google profile email:", email);
-
-        // 1. Find by googleId
+        // 1. Find by googleId — existing linked user
         let user = await User.findOne({ googleId: profile.id });
         if (user) {
           user.lastLogin = new Date();
+          user.avatar    = avatar || user.avatar;
           await user.save();
           return done(null, user);
         }
 
-        // 2. Find by email and link
+        // 2. Find by email and link google account
         if (email) {
           user = await User.findOne({ email });
           if (user) {
@@ -40,21 +35,27 @@ passport.use(
           }
         }
 
-        // 3. Create new admin user (first come = admin)
+        // 3. Only allow ADMIN_EMAIL to create new account via Google
+        const allowedEmail = process.env.ADMIN_EMAIL;
+        if (!allowedEmail || email !== allowedEmail) {
+          return done(null, false, {
+            message: "Access denied. Only the admin email can sign in with Google."
+          });
+        }
+
+        // 4. Create admin user for allowed email
         user = await User.create({
           name:      profile.displayName,
-          email:     email || `${profile.id}@google.com`,
+          email:     email,
           googleId:  profile.id,
           avatar,
           role:      "admin",
           lastLogin: new Date(),
         });
 
-        console.log("New Google user created:", user.email);
         return done(null, user);
 
       } catch (err) {
-        console.error("Google OAuth error:", err);
         return done(err, null);
       }
     }

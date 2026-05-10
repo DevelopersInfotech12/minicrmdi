@@ -12,6 +12,12 @@ const activitySchema = new mongoose.Schema({
 
 const leadSchema = new mongoose.Schema(
   {
+    owner: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+      index: true,
+    },
     name:          { type: String, required: [true, "Name is required"], trim: true, maxlength: 100 },
     phone:         { type: String, required: [true, "Phone is required"], trim: true, maxlength: 20 },
     email:         { type: String, trim: true, lowercase: true, default: "" },

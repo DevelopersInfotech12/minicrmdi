@@ -11,34 +11,57 @@ export const generateToken = (userId) => {
 export const sendTokenCookie = (res, token) => {
   res.cookie("token", token, {
     httpOnly: true,
-    secure:   true,
-    sameSite: "none",  // ← allows cross-domain cookies
+    secure:   process.env.NODE_ENV === "production",
+    sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
     maxAge:   7 * 24 * 60 * 60 * 1000,
   });
 };
 
 export const protect = async (req, res, next) => {
   try {
+    // 1. Try cookie first
     let token = req.cookies?.token;
 
+    // 2. Try Authorization header (Bearer token)
     if (!token && req.headers.authorization?.startsWith("Bearer ")) {
       token = req.headers.authorization.split(" ")[1];
     }
 
-    if (!token) throw new AppError("Not authenticated. Please log in.", 401);
+    // 3. Try custom header x-auth-token
+    if (!token && req.headers["x-auth-token"]) {
+      token = req.headers["x-auth-token"];
+    }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    const user    = await User.findById(decoded.id).select("-password");
+    if (!token) {
+      return next(new AppError("Not authenticated. Please log in.", 401));
+    }
 
-    if (!user)          throw new AppError("User no longer exists.", 401);
-    if (!user.isActive) throw new AppError("Account is disabled.", 403);
+    let decoded;
+    try {
+      decoded = jwt.verify(token, process.env.JWT_SECRET);
+    } catch (err) {
+      res.cookie("token", "", { httpOnly: true, expires: new Date(0) });
+      if (err.name === "TokenExpiredError") {
+        return next(new AppError("Session expired. Please log in again.", 401));
+      }
+      return next(new AppError("Invalid token. Please log in again.", 401));
+    }
+
+    const user = await User.findById(decoded.id).select("-password");
+
+    if (!user) {
+      res.cookie("token", "", { httpOnly: true, expires: new Date(0) });
+      return next(new AppError("Account not found. Please log in again.", 401));
+    }
+
+    if (!user.isActive) {
+      return next(new AppError("Account is disabled.", 403));
+    }
 
     req.user = user;
     next();
   } catch (err) {
-    if (err.name === "JsonWebTokenError") return next(new AppError("Invalid token.", 401));
-    if (err.name === "TokenExpiredError") return next(new AppError("Token expired. Please log in again.", 401));
-    next(err);
+    next(new AppError("Authentication failed. Please log in.", 401));
   }
 };
 
