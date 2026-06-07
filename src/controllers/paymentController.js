@@ -2,6 +2,7 @@ import Payment from "../models/Payment.js";
 import Project from "../models/Project.js";
 import AppError from "../utils/AppError.js";
 import { sendSuccess } from "../utils/apiResponse.js";
+import { logActivity, diffObjects } from "../utils/activityLogger.js";
 
 export const getAllPayments = async (req, res) => {
   const { client, project, page = 1, limit = 10 } = req.query;
@@ -58,6 +59,21 @@ export const createPayment = async (req, res) => {
     { path: "client",  select: "name email phone" },
     { path: "project", select: "title status" },
   ]);
+
+  await logActivity({
+    owner: req.user._id,
+    entityType: "payment",
+    entityId: payment._id,
+    entityName: payment.project?.title || "Payment",
+    project: payment.project?._id || payment.project,
+    client: payment.client?._id || payment.client,
+    action: "created",
+    description: `Payment created for project "${payment.project?.title}" — Total: ₹${payment.totalAmount}`,
+    page: "payment",
+    icon: "credit-card",
+    color: "#10b981",
+  });
+
   sendSuccess(res, 201, "Payment created successfully", { payment });
 };
 
@@ -65,6 +81,8 @@ export const updatePayment = async (req, res) => {
   const { totalAmount, paidAmount, dueDate } = req.body;
   const payment = await Payment.findOne({ _id: req.params.id, owner: req.user._id });
   if (!payment) throw new AppError("Payment not found", 404);
+
+  const before = { totalAmount: payment.totalAmount, paidAmount: payment.paidAmount };
 
   const newTotal = totalAmount !== undefined ? totalAmount : payment.totalAmount;
   const newPaid  = paidAmount  !== undefined ? paidAmount  : payment.paidAmount;
@@ -78,12 +96,46 @@ export const updatePayment = async (req, res) => {
     { path: "client",  select: "name email phone" },
     { path: "project", select: "title status" },
   ]);
+
+  const changes = diffObjects(before, { totalAmount: newTotal, paidAmount: newPaid }, ["totalAmount", "paidAmount"]);
+
+  await logActivity({
+    owner: req.user._id,
+    entityType: "payment",
+    entityId: payment._id,
+    entityName: payment.project?.title || "Payment",
+    project: payment.project?._id || payment.project,
+    client: payment.client?._id || payment.client,
+    action: "payment_updated",
+    description: `Payment updated for "${payment.project?.title}" — Paid: ₹${newPaid} / ₹${newTotal}`,
+    changes,
+    page: "payment",
+    icon: "credit-card",
+    color: "#6366f1",
+  });
+
   sendSuccess(res, 200, "Payment updated successfully", { payment });
 };
 
 export const deletePayment = async (req, res) => {
-  const payment = await Payment.findOne({ _id: req.params.id, owner: req.user._id });
+  const payment = await Payment.findOne({ _id: req.params.id, owner: req.user._id })
+    .populate("project", "title");
   if (!payment) throw new AppError("Payment not found", 404);
+
+  await logActivity({
+    owner: req.user._id,
+    entityType: "payment",
+    entityId: payment._id,
+    entityName: payment.project?.title || "Payment",
+    project: payment.project?._id || payment.project,
+    client: payment.client,
+    action: "deleted",
+    description: `Payment for "${payment.project?.title}" was deleted`,
+    page: "payment",
+    icon: "trash-2",
+    color: "#ef4444",
+  });
+
   await payment.deleteOne();
   sendSuccess(res, 200, "Payment deleted successfully");
 };

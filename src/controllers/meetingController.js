@@ -1,6 +1,7 @@
 import Meeting from "../models/Meeting.js";
 import { sendSuccess } from "../utils/apiResponse.js";
 import AppError from "../utils/AppError.js";
+import { logActivity } from "../utils/activityLogger.js";
 
 // GET /meetings
 export const getAllMeetings = async (req, res) => {
@@ -10,14 +11,12 @@ export const getAllMeetings = async (req, res) => {
   if (status) filter.status = status;
   if (type)   filter.type   = type;
 
-  // Filter by month/year
   if (month && year) {
     const start = new Date(year, month - 1, 1);
     const end   = new Date(year, month, 0, 23, 59, 59);
     filter.date = { $gte: start, $lte: end };
   }
 
-  // Filter by specific date
   if (date) {
     const d     = new Date(date);
     const start = new Date(d.getFullYear(), d.getMonth(), d.getDate());
@@ -87,22 +86,54 @@ export const createMeeting = async (req, res) => {
     owner: req.user._id,
     title, description, date, startTime, endTime,
     type, status, priority, location, meetingLink,
-    client: client || null,
-    lead:   lead   || null,
-    project:project|| null,
+    client:  client  || null,
+    lead:    lead    || null,
+    project: project || null,
     notes,
   });
+
+  await logActivity({
+    owner: req.user._id,
+    entityType: "meeting",
+    entityId: meeting._id,
+    entityName: meeting.title,
+    project: project || null,
+    client:  client  || null,
+    action: "created",
+    description: `Meeting "${meeting.title}" scheduled on ${new Date(date).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}`,
+    page: "calendar",
+    icon: "calendar-plus",
+    color: "#6366f1",
+  });
+
   sendSuccess(res, 201, "Meeting created", { meeting });
 };
 
 // PUT /meetings/:id
 export const updateMeeting = async (req, res) => {
+  const existing = await Meeting.findOne({ _id: req.params.id, owner: req.user._id });
+  if (!existing) throw new AppError("Meeting not found", 404);
+
   const meeting = await Meeting.findOneAndUpdate(
     { _id: req.params.id, owner: req.user._id },
     req.body,
     { new: true, runValidators: true }
   );
-  if (!meeting) throw new AppError("Meeting not found", 404);
+
+  await logActivity({
+    owner: req.user._id,
+    entityType: "meeting",
+    entityId: meeting._id,
+    entityName: meeting.title,
+    project: meeting.project || null,
+    client:  meeting.client  || null,
+    action: "updated",
+    description: `Meeting "${meeting.title}" was updated`,
+    page: "calendar",
+    icon: "pencil",
+    color: "#f59e0b",
+  });
+
   sendSuccess(res, 200, "Meeting updated", { meeting });
 };
 
@@ -110,6 +141,21 @@ export const updateMeeting = async (req, res) => {
 export const deleteMeeting = async (req, res) => {
   const meeting = await Meeting.findOneAndDelete({ _id: req.params.id, owner: req.user._id });
   if (!meeting) throw new AppError("Meeting not found", 404);
+
+  await logActivity({
+    owner: req.user._id,
+    entityType: "meeting",
+    entityId: meeting._id,
+    entityName: meeting.title,
+    project: meeting.project || null,
+    client:  meeting.client  || null,
+    action: "deleted",
+    description: `Meeting "${meeting.title}" was deleted`,
+    page: "calendar",
+    icon: "trash-2",
+    color: "#ef4444",
+  });
+
   sendSuccess(res, 200, "Meeting deleted");
 };
 
@@ -122,5 +168,27 @@ export const updateStatus = async (req, res) => {
     { new: true }
   );
   if (!meeting) throw new AppError("Meeting not found", 404);
+
+  const actionMap = {
+    Completed:   "completed",
+    Cancelled:   "cancelled",
+    Rescheduled: "rescheduled",
+  };
+
+  await logActivity({
+    owner: req.user._id,
+    entityType: "meeting",
+    entityId: meeting._id,
+    entityName: meeting.title,
+    project: meeting.project || null,
+    client:  meeting.client  || null,
+    action: actionMap[status] || "status_changed",
+    description: `Meeting "${meeting.title}" marked as ${status}`,
+    changes: [{ field: "status", from: null, to: status }],
+    page: "calendar",
+    icon: status === "Completed" ? "check-circle" : status === "Cancelled" ? "x-circle" : "refresh-cw",
+    color: status === "Completed" ? "#10b981" : status === "Cancelled" ? "#ef4444" : "#f59e0b",
+  });
+
   sendSuccess(res, 200, "Status updated", { meeting });
 };

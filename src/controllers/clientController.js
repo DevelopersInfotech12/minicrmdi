@@ -6,6 +6,7 @@ import Note from "../models/Note.js";
 import Invoice from "../models/Invoice.js";
 import AppError from "../utils/AppError.js";
 import { sendSuccess } from "../utils/apiResponse.js";
+import { logActivity, diffObjects } from "../utils/activityLogger.js";
 
 export const getAllClients = async (req, res) => {
   const { search, isActive, page = 1, limit = 10, sortBy = "createdAt", order = "desc", serviceType, priority, isRecurring } = req.query;
@@ -108,22 +109,74 @@ export const createClient = async (req, res) => {
   const { name, email, phone, address, company } = req.body;
   const client = await Client.create({
     owner: req.user._id, name, email, phone, address, company });
+
+  await logActivity({
+    owner: req.user._id,
+    entityType: "client",
+    entityId: client._id,
+    entityName: client.name,
+    client: client._id,
+    action: "created",
+    description: `Client "${client.name}" was added`,
+    page: "client",
+    icon: "user-plus",
+    color: "#10b981",
+  });
+
   sendSuccess(res, 201, "Client created successfully", { client });
 };
 
 export const updateClient = async (req, res) => {
   const { name, email, phone, address, company, isActive } = req.body;
+
+  const existing = await Client.findOne({ _id: req.params.id, owner: req.user._id });
+  if (!existing) throw new AppError("Client not found", 404);
+
+  const before = { name: existing.name, email: existing.email, phone: existing.phone, company: existing.company };
+
   const client = await Client.findOneAndUpdate({ _id: req.params.id, owner: req.user._id },
     { name, email, phone, address, company, isActive },
     { new: true, runValidators: true, omitUndefined: true }
   );
   if (!client) throw new AppError("Client not found", 404);
+
+  const after = { name: client.name, email: client.email, phone: client.phone, company: client.company };
+  const changes = diffObjects(before, after, Object.keys(before));
+
+  await logActivity({
+    owner: req.user._id,
+    entityType: "client",
+    entityId: client._id,
+    entityName: client.name,
+    client: client._id,
+    action: "updated",
+    description: `Client "${client.name}" was updated`,
+    changes,
+    page: "client",
+    icon: "pencil",
+    color: "#6366f1",
+  });
+
   sendSuccess(res, 200, "Client updated successfully", { client });
 };
 
 export const deleteClient = async (req, res) => {
   const client = await Client.findOne({ _id: req.params.id, owner: req.user._id });
   if (!client) throw new AppError("Client not found", 404);
+
+  await logActivity({
+    owner: req.user._id,
+    entityType: "client",
+    entityId: client._id,
+    entityName: client.name,
+    client: client._id,
+    action: "deleted",
+    description: `Client "${client.name}" was deleted`,
+    page: "client",
+    icon: "trash-2",
+    color: "#ef4444",
+  });
+
   await client.deleteOne();
   sendSuccess(res, 200, "Client deleted successfully");
 };
@@ -133,5 +186,20 @@ export const toggleClientStatus = async (req, res) => {
   if (!client) throw new AppError("Client not found", 404);
   client.isActive = !client.isActive;
   await client.save();
+
+  await logActivity({
+    owner: req.user._id,
+    entityType: "client",
+    entityId: client._id,
+    entityName: client.name,
+    client: client._id,
+    action: "status_changed",
+    description: `Client "${client.name}" was ${client.isActive ? "activated" : "deactivated"}`,
+    changes: [{ field: "isActive", from: !client.isActive, to: client.isActive }],
+    page: "client",
+    icon: client.isActive ? "check-circle" : "x-circle",
+    color: client.isActive ? "#10b981" : "#ef4444",
+  });
+
   sendSuccess(res, 200, `Client ${client.isActive ? "activated" : "deactivated"} successfully`, { client });
 };

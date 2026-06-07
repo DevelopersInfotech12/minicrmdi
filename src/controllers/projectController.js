@@ -4,6 +4,7 @@ import Employee from "../models/Employee.js";
 import AppError from "../utils/AppError.js";
 import { sendSuccess } from "../utils/apiResponse.js";
 import { SERVICE_TYPES, PRIORITY_TYPES, BILLING_CYCLES } from "../models/Project.js";
+import { logActivity, diffObjects } from "../utils/activityLogger.js";
 
 export const getAllProjects = async (req, res) => {
   const { status, client, clientName, search, serviceType, priority, isRecurring,
@@ -144,6 +145,21 @@ export const createProject = async (req, res) => {
   await project.save();
   await project.populate("client","name email phone company");
   await project.populate("assignedTo","name role email");
+
+  await logActivity({
+    owner: req.user._id,
+    entityType: "project",
+    entityId: project._id,
+    entityName: project.title,
+    project: project._id,
+    client: project.client?._id || project.client,
+    action: "created",
+    description: `Project "${project.title}" was created`,
+    page: "project",
+    icon: "folder-plus",
+    color: "#10b981",
+  });
+
   sendSuccess(res, 201, "Project created", { project });
 };
 
@@ -154,6 +170,14 @@ export const updateProject = async (req, res) => {
 
   const project = await Project.findOne({ _id: req.params.id, owner: req.user._id });
   if (!project) throw new AppError("Project not found", 404);
+
+  // Snapshot before
+  const before = {
+    title: project.title, status: project.status, serviceType: project.serviceType,
+    priority: project.priority, billingCycle: project.billingCycle,
+    recurringAmount: project.recurringAmount, recurringActive: project.recurringActive,
+    budget: project.budget,
+  };
 
   if (title !== undefined)           project.title           = title;
   if (description !== undefined)     project.description     = description;
@@ -177,12 +201,73 @@ export const updateProject = async (req, res) => {
   await project.save();
   await project.populate("client","name email phone company");
   await project.populate("assignedTo","name role email");
+
+  const after = {
+    title: project.title, status: project.status, serviceType: project.serviceType,
+    priority: project.priority, billingCycle: project.billingCycle,
+    recurringAmount: project.recurringAmount, recurringActive: project.recurringActive,
+    budget: project.budget,
+  };
+  const changes = diffObjects(before, after, Object.keys(before));
+
+  const isStatusChange = changes.some(c => c.field === "status");
+  const isBilled = lastBilledDate !== undefined;
+
+  // Extra log for recurring billing event
+  if (isBilled) {
+    await logActivity({
+      owner: req.user._id,
+      entityType: "recurring",
+      entityId: project._id,
+      entityName: project.title,
+      project: project._id,
+      client: project.client?._id || project.client,
+      action: "billed",
+      description: `Recurring billing recorded for "${project.title}" — ₹${project.recurringAmount} (${project.billingCycle})`,
+      page: "recurring",
+      icon: "refresh-cw",
+      color: "#8b5cf6",
+    });
+  }
+
+  await logActivity({
+    owner: req.user._id,
+    entityType: "project",
+    entityId: project._id,
+    entityName: project.title,
+    project: project._id,
+    client: project.client?._id || project.client,
+    action: isStatusChange ? "status_changed" : "updated",
+    description: isStatusChange
+      ? `Project "${project.title}" status changed to "${project.status}"`
+      : `Project "${project.title}" was updated`,
+    changes,
+    page: isBilled ? "recurring" : "project",
+    icon: isStatusChange ? "refresh-cw" : "pencil",
+    color: isStatusChange ? "#f59e0b" : "#6366f1",
+  });
+
   sendSuccess(res, 200, "Project updated", { project });
 };
 
 export const deleteProject = async (req, res) => {
   const project = await Project.findOne({ _id: req.params.id, owner: req.user._id });
   if (!project) throw new AppError("Project not found", 404);
+
+  await logActivity({
+    owner: req.user._id,
+    entityType: "project",
+    entityId: project._id,
+    entityName: project.title,
+    project: project._id,
+    client: project.client,
+    action: "deleted",
+    description: `Project "${project.title}" was deleted`,
+    page: "project",
+    icon: "trash-2",
+    color: "#ef4444",
+  });
+
   await project.deleteOne();
   sendSuccess(res, 200, "Project deleted");
 };

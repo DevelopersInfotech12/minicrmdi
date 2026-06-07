@@ -4,14 +4,27 @@ import AppError from "../utils/AppError.js";
 import { sendSuccess } from "../utils/apiResponse.js";
 
 export const getAllLeads = async (req, res) => {
-  const { stage, source, search, isArchived = "false", page = 1, limit = 20, sortBy = "createdAt", order = "desc" } = req.query;
+  const { stage, source, search, followUp, isArchived = "false", page = 1, limit = 20, sortBy = "createdAt", order = "desc" } = req.query;
 
   const filter = {
-    owner: req.user._id,        // ← FIXED
+    owner: req.user._id,
     isArchived: isArchived === "true",
   };
   if (stage)  filter.stage  = stage;
   if (source) filter.source = source;
+  if (followUp) {
+    const now   = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const todayEnd = new Date(today); todayEnd.setDate(todayEnd.getDate() + 1);
+    const weekEnd  = new Date(today); weekEnd.setDate(weekEnd.getDate() + 7);
+    const nextWeekStart = new Date(today); nextWeekStart.setDate(nextWeekStart.getDate() + 7);
+    const nextWeekEnd   = new Date(today); nextWeekEnd.setDate(nextWeekEnd.getDate() + 14);
+    if (followUp === "overdue")   { filter.followUpDate = { $lt: today }; filter.stage = { $nin: ["Converted", "Lost"] }; }
+    if (followUp === "today")     { filter.followUpDate = { $gte: today, $lt: todayEnd }; }
+    if (followUp === "this_week") { filter.followUpDate = { $gte: today, $lt: weekEnd }; }
+    if (followUp === "next_week") { filter.followUpDate = { $gte: nextWeekStart, $lt: nextWeekEnd }; }
+    if (followUp === "no_date")   { filter.followUpDate = { $in: [null, undefined] }; }
+  }
   if (search) {
     filter.$or = [
       { name:  { $regex: search, $options: "i" } },
