@@ -13,7 +13,8 @@ import taskRoutes      from "./taskRoutes.js";
 import meetingRoutes   from "./meetingRoutes.js";
 import employeeRoutes  from "./employeeRoutes.js";
 import activityRoutes  from "./activityRoutes.js";
-import payrollRoutes   from "./payrollRoutes.js";
+import payrollRoutes          from "./payrollRoutes.js";
+import personalProjectRoutes  from "./personalProjectRoutes.js";
 
 const router = express.Router();
 
@@ -30,6 +31,7 @@ router.use("/tasks",     protect, taskRoutes);
 router.use("/meetings",  protect, meetingRoutes);
 router.use("/employees", protect, employeeRoutes);
 router.use("/activity",  protect, activityRoutes);
-router.use("/payroll",   protect, payrollRoutes);
+router.use("/payroll",          protect, payrollRoutes);
+router.use("/personal-projects", protect, personalProjectRoutes);
 
 export default router;

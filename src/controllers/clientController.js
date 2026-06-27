@@ -25,8 +25,8 @@ export const getAllClients = async (req, res) => {
   // Filter by project attributes (serviceType, priority, isRecurring)
   if (serviceType || priority || isRecurring !== undefined) {
     const projectFilter = { owner: req.user._id };
-    if (serviceType)    projectFilter.serviceType  = serviceType;
-    if (priority)       projectFilter.priority     = priority;
+    if (serviceType) projectFilter.serviceType = serviceType;
+    if (priority) projectFilter.priority = priority;
     if (isRecurring !== undefined) projectFilter.isRecurring = isRecurring === "true";
     const matchingProjects = await Project.find(projectFilter).distinct("client");
     filter._id = { $in: matchingProjects };
@@ -73,16 +73,16 @@ export const getClientProfile = async (req, res) => {
   ]);
 
   // Revenue stats
-  const totalRevenue  = payments.reduce((s, p) => s + p.totalAmount, 0);
-  const totalPaid     = payments.reduce((s, p) => s + p.paidAmount, 0);
-  const totalPending  = totalRevenue - totalPaid;
+  const totalRevenue = payments.reduce((s, p) => s + p.totalAmount, 0);
+  const totalPaid = payments.reduce((s, p) => s + p.paidAmount, 0);
+  const totalPending = totalRevenue - totalPaid;
 
   // Project stats
   const projectStats = {
-    total:     projects.length,
-    active:    projects.filter(p => p.status === "Active").length,
+    total: projects.length,
+    active: projects.filter(p => p.status === "Active").length,
     completed: projects.filter(p => p.status === "Completed").length,
-    onHold:    projects.filter(p => p.status === "On Hold").length,
+    onHold: projects.filter(p => p.status === "On Hold").length,
   };
 
   // Overdue milestones
@@ -107,8 +107,19 @@ export const getClientProfile = async (req, res) => {
 
 export const createClient = async (req, res) => {
   const { name, email, phone, address, company } = req.body;
+
+  // ✅ FIX: Check email uniqueness per owner only (not globally)
+  const duplicate = await Client.findOne({
+    email: email.toLowerCase().trim(),
+    owner: req.user._id,
+  });
+  if (duplicate) {
+    throw new AppError("A client with this email already exists in your account", 400);
+  }
+
   const client = await Client.create({
-    owner: req.user._id, name, email, phone, address, company });
+    owner: req.user._id, name, email, phone, address, company,
+  });
 
   await logActivity({
     owner: req.user._id,
@@ -132,9 +143,22 @@ export const updateClient = async (req, res) => {
   const existing = await Client.findOne({ _id: req.params.id, owner: req.user._id });
   if (!existing) throw new AppError("Client not found", 404);
 
+  // ✅ FIX: If email changing, ensure no other client of THIS owner has that email
+  if (email && email.toLowerCase().trim() !== existing.email) {
+    const duplicate = await Client.findOne({
+      email: email.toLowerCase().trim(),
+      owner: req.user._id,
+      _id: { $ne: req.params.id },
+    });
+    if (duplicate) {
+      throw new AppError("A client with this email already exists in your account", 400);
+    }
+  }
+
   const before = { name: existing.name, email: existing.email, phone: existing.phone, company: existing.company };
 
-  const client = await Client.findOneAndUpdate({ _id: req.params.id, owner: req.user._id },
+  const client = await Client.findOneAndUpdate(
+    { _id: req.params.id, owner: req.user._id },
     { name, email, phone, address, company, isActive },
     { new: true, runValidators: true, omitUndefined: true }
   );
